@@ -1,0 +1,209 @@
+---
+title: "Bayesian Modelling - Homework 1"
+author: "Sebastian Kimm-Friedenberg"
+date: '2022-11-02'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+Load packages:
+```{r packages,include=TRUE,echo=TRUE , results=FALSE}
+library(bayesm)
+library(data.table)
+library(knitr)
+library(flextable)
+library(tidyverse)
+set.seed(60323)
+
+library(compiler)
+runireg_c=cmpfun(runireg) # a bit faster
+```
+
+
+## Task 1
+
+```{r task_1_code, include=TRUE,echo=TRUE , results=FALSE}
+nobs <- c(5,10,100,1000,10000,20000, 30000) # different ns
+
+# matrices in which results are stored
+b_b1 <- matrix(0, length(nobs), 3) # m rows, 3 columns
+sd_b1 <- matrix(0, length(nobs), 3)
+b_ols <- b_b1
+sd_ols <- b_b1
+
+iteration <- 0
+
+for (n in nobs){
+  print(n)
+  iteration <- iteration + 1
+  # set up DGP
+  #n <- 5
+  X <- cbind(rep(1,n),runif(n),runif(n))
+  beta <- c(-1,3,6)
+  y <- (X %*% beta + rnorm(n, mean = 0, sd = 1))# set up y
+  
+  # set up sampling
+  R <- 80000 # as in the lecture
+  Mcmc1 <- list(R=R,keep=1, nprint = 0)
+  Prior <- list(nu=0, ssq=0) # beta = 0 as default
+  
+  # run regressions
+  ## bayes
+  out_b1 <- runireg_c(Data=list(y=y,X=X), Prior = Prior,Mcmc=Mcmc1)
+  b_draw1 <-out_b1$betadraw 
+  b_b1[iteration,] <- apply(b_draw1, 2, mean) # get mean for each coeff.
+  sd_b1[iteration,] <- apply(b_draw1, 2, sd) # standard deviation
+  
+  ## ols
+  out_ols <- lm(y ~ X[,-1]) # without intercept in x, is added automatically
+  summary(out_ols)
+  b_ols[iteration,] <- matrix(out_ols$coefficients, 1, 3)
+  sd_ols[iteration,] <- matrix(sqrt(diag(vcov(out_ols))), 1, 3)
+}
+```
+The previous code computed the outcomes for the Bayes and OLS estimator along with their standard deviations. The reuslts are presented below:
+
+```{r task_1_res, include=TRUE,echo=FALSE , results='asis'}
+res <- data.frame(n = nobs, b1 = b_b1[,1], sd_b1 = sd_b1[,1],
+                            b2 = b_b1[,2], sd_b2 = sd_b1[,2],
+                            b3 = b_b1[,3], sd_b3 = sd_b1[,3],
+                            ols1 = b_ols[,1], sd_ols1 = sd_ols[,1],
+                            ols2 = b_ols[,2], sd_ols2 = sd_ols[,2],
+                            ols3 = b_ols[,3], sd_ols3 = sd_ols[,3])
+
+round(res,4) %>% regulartable() %>% autofit() %>% fit_to_width(max_width = 6.5)
+```
+We can see that with increasing sample size both estimators converge to the true values of $\beta =$,(`r beta`). The Bayesian estimator constantly has a smaller standard deviation than the OLS estimator, implying the Bayesian being more efficient.
+
+
+## Task 2
+
+```{r task_2_code, include=TRUE,echo=TRUE , results=FALSE}
+nobs <- 10000 # medium sized observation size
+noby <- n # faster then changing all "n" to "nobs"
+# matrices in which results are stored
+b_b <- matrix(0, length(nobs), 3) # m rows, 3 columns
+sd_b <- matrix(0, length(nobs), 3)
+b_ols <- b_b
+sd_ols <- b_b
+
+# set up DGP
+#n <- 5
+hilf= runif(nobs)
+X <- cbind(rep(1,n),hilf, hilf)
+beta <- c(-1,3,6)
+y <- (X %*% beta + rnorm(n, mean = 0, sd = 1))# set up y
+
+# set up sampling
+R <- 80000 # as in the lecture
+Mcmc1 <- list(R=R,keep=1, nprint = 0)
+Prior <- list(nu=0, ssq=0) # beta = 0 as default
+
+# run regressions
+## bayes
+out_b <- runireg_c(Data=list(y=y,X=X), Prior = Prior,Mcmc=Mcmc1)
+b_draw <-out_b$betadraw 
+b_b[1,] <- apply(b_draw, 2, mean) # get mean for each coeff.
+sd_b[1,] <- apply(b_draw, 2, sd) # standard deviation
+
+## ols
+out_ols <- lm(y ~ X[,-1]) # without intercept in x, is added automatically
+summary(out_ols)
+b_ols[1,] <- matrix(out_ols$coefficients, 1, 3)
+sd_ols[1,] <- matrix(sqrt(diag(vcov(out_ols))), 1, 3)
+```
+
+```{r task_2_res, include=TRUE,echo=TRUE , results='asis'}
+res <- data.frame(n = nobs, b1 = b_b[,1], sd_b1 = sd_b[,1],
+                            b2 = b_b[,2], sd_b2 = sd_b[,2],
+                            b3 = b_b[,3], sd_b3 = sd_b[,3],
+                            ols1 = b_ols[,1], sd_ols1 = sd_ols[,1],
+                            ols2 = b_ols[,2], sd_ols2 = sd_ols[,2],
+                            ols3 = b_ols[,3], sd_ols3 = sd_ols[,3])
+
+round(res,4) %>% regulartable() %>% autofit() %>% fit_to_width(max_width = 6.5)
+kable(summary(b_draw), digits = 4)
+kable(t(apply(b_draw,2,quantile)), digits = 4)
+```
+The `lm` command, i.e. the OLS estimation, automatically omits one of the identical variables. Due to multicolinearity, the matrix $X'X$ is not invertible and the OLS estimator would not be feasible.
+In contrast, the Bayesian posterior distribution is computed for both variables and it is almost identical. The third variable has a slightly smaller mean and seems to be a bit more skewed to the right, according to the quantiles.
+
+Plotting the three variables confirms that the poserior distribtuion of 2 and 3 is almost identical.
+
+```{r task_2_plot, include=TRUE,echo=FALSE, Efig.show="hold"}
+# out.width="50%"
+par(mfrow=c(1,3))
+hist(b_draw[,1], breaks = 100)
+hist(b_draw[,2], breaks = 100)
+hist(b_draw[,3], breaks = 100)
+#dev.off()
+```
+
+## Task 3
+```{r task_3_code, include=TRUE,echo=TRUE , results=FALSE}
+nobs <- c(5,10,100,1000,10000,20000, 30000) # different ns
+
+# matrices in which results are stored
+b_b3 <- matrix(0, length(nobs), 3) # m rows, 3 columns
+sd_b3 <- matrix(0, length(nobs), 3)
+b_pro <- b_b3
+sd_pro <- b_b3
+
+iteration <- 0
+
+for (n in nobs){
+  print(n)
+  iteration <- iteration + 1
+  # set up DGP
+  #n <- 5
+  X <- cbind(rep(1,n),runif(n),runif(n))
+  beta <- c(-1,3,6)
+  y <- (X %*% beta + rnorm(n, mean = 0, sd = 1))# set up y
+  y <- ifelse(y<0,0,1)
+  
+  # set up sampling
+  R <- 80000 # as in the lecture
+  Mcmc1 <- list(R=R,keep=1, nprint = 0)
+  #Prior <- list(nu=0, ssq=0) # beta = 0 as default
+  
+  # run regressions
+  ## bayes
+  out_b3 <- runireg_c(Data=list(y=y,X=X),Mcmc=Mcmc1)
+  b_draw3 <-out_b3$betadraw 
+  b_b3[iteration,] <- apply(b_draw3, 2, mean) # get mean for each coeff.
+  sd_b3[iteration,] <- apply(b_draw3, 2, sd) # standard deviation
+  
+  ## ols
+  out_pro <- glm(y ~ X[,-1], family=binomial(link="probit")) # without intercept in x, is added automatically
+  summary(out_pro)
+  b_pro[iteration,] <- matrix(out_pro$coefficients, 1, 3)
+  sd_pro[iteration,] <- matrix(sqrt(diag(vcov(out_pro))), 1, 3)
+}
+```
+Below, the first table shows the results of the Bayes estimator and the probit estimator for the probit data. The second shows the comparison of the Bayes estimator performance for linear and probit data.
+Clearly, the probit model converges (slowly) to the true parameters whereas the Bayesian model is consistently wrong, i.e. unable to recover the true parameters `r beta`.
+Regarding the trade-off between sample size and having access to the linear observations or only to the probit observations, the access to linear observations should always be preferred. In the linear case, the estimator converges relatively quickly whereas in the probit case it quite far away from the true result regardless of the sample size.
+
+```{r task_3_res, include=TRUE,echo=FALSE , results='asis'}
+res1 <- data.frame(n = nobs, b1 = b_b3[,1], sd_b1 = sd_b3[,1],
+                            b2 = b_b3[,2], sd_b2 = sd_b3[,2],
+                            b3 = b_b3[,3], sd_b3 = sd_b3[,3],
+                            pro1 = b_pro[,1], sd_pro1 = sd_pro[,1],
+                            pro2 = b_pro[,2], sd_pro2 = sd_pro[,2],
+                            pro3 = b_pro[,3], sd_pro3 = sd_pro[,3])
+res2 <- data.frame(n = nobs, b1.1 = b_b1[,1], sd_b1.1 = sd_b1[,1],
+                            b2.1 = b_b1[,2], sd_b2.1 = sd_b1[,2],
+                            b3.1 = b_b1[,3], sd_b3.1 = sd_b1[,3],
+                            b1.3 = b_b3[,1], sd_b1.3 = sd_b3[,1],
+                            b2.3 = b_b3[,2], sd_b2.3 = sd_b3[,2],
+                            b3.3 = b_b3[,3], sd_b3.3 = sd_b3[,3])
+
+round(res1, 4) %>% regulartable() %>%  colformat_num(digits=4)  %>% autofit() %>% fit_to_width(max_width = 6.5)
+round(res2, 4) %>% regulartable() %>%  colformat_num(digits=4)  %>% autofit() %>% fit_to_width(max_width = 6.5)
+```
+
+
+
