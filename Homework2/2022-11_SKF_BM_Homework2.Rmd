@@ -1,0 +1,250 @@
+---
+title: "Bayesian Modelling - Homework 2"
+author: "Sebastian Kimm-Friedenberg"
+date: '2022-11-23'
+output: pdf_document
+---
+
+```{r setup, include=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+Load packages:
+```{r packages,include=TRUE,echo=TRUE , results=FALSE, message=FALSE}
+library(bayesm)
+library(data.table)
+library(knitr)
+library(flextable)
+library(tidyverse)
+set.seed(60323)
+
+library(compiler)
+```
+
+
+## Task 1
+```{r my_rtrun, include=FALSE,echo=FALSE, message=FALSE, Efig.show="hold"}
+## check whether understaning of rtrun is correct
+## replicate rtrun, which should produce a similar result
+## source: https://medium.com/codex/what-is-truncated-normal-distribution-33541dd839cf
+
+mu <- 0
+sd <- 1
+lower <- -1.5
+upper <- 1.5
+
+
+# cumulative distirbution function
+pTruncated_norm <- function(x, mu=0, sigma=1, a, b){
+  if(b<=a){
+    stop("Bounds are no specified correctly")
+  }
+  
+  # if x exceeds the the bounds, the distribution is not automatically
+  # normalized to 0 and one
+  # --> compute the bounds manually
+  out <- rep(NA, length(x))
+  for (i in 1:length(x)){
+    if(x[i]<a){
+    out[i] <- 0
+    } else if (x[i]>b){
+    out[i] <- 1
+    } else{
+    out[i] <- (pnorm(x[i],mean = mu, sd=sigma) - pnorm(a,mean = mu, sd=sigma )) / (pnorm(b,mean = mu, sd=sigma) - pnorm(a,mean = mu, sd=sigma ))
+    }
+  }
+  return(out)
+}
+
+# get quantile
+qTruncated_norm <- function(q, mu=0, sigma=1, a, b){
+  # function value for inverse of cumulative distribution function
+  tmp <- pnorm(a,mean = mu, sd=sigma) + q*(pnorm(b,mean = mu, sd=sigma) - pnorm(a,mean = mu, sd=sigma ))
+  out <- qnorm(tmp, mean = mu, sd=sigma)
+  return(out)
+}
+
+my_rtrun <- function(n=1,mu=0, sigma=1, a, b){
+  tmp <- runif(n) # choose random number between [0,1]
+  out <- qTruncated_norm(tmp, mu = mu, sigma = sigma, a = a, b= b)
+  return(out)
+}
+
+# test my function against the original
+original <- rep(NA, 10000)
+my <- original
+for (i in 1:length(original)){
+  original[i] <- rtrun(mu=mu, sigma=sd, a=lower, b=upper)
+  my[i] <- my_rtrun(mu=mu, sigma=sd, a=lower, b=upper)
+}
+
+par(mfrow=c(1,3))
+hist(original, breaks = 100)
+hist(my, breaks = 100)
+# Looks good!
+```
+
+
+```{r task_1_code, include=TRUE,echo=TRUE , results=FALSE, message=FALSE}
+## code based on rbiNormGibbs
+bi_trun_norm_gibbs <- function(initx = 2, inity = -2, rho, burnin = 100, R = 500, mu=NULL, sigma=NULL,lower1, upper1, lower2, upper2) {
+    ######## newly added  
+    ## define mean and sd of normal, if not given by user
+    if(is.null(mu)){
+      mu = c(0, 0)
+    } else if(length(mu)!=2) {
+      stop("mu is not a 2x1 vector")
+    }
+    
+    if(is.null(sigma)){
+      sigma = matrix(c(1, rho, rho, 1), ncol = 2)
+    } else if(length(sigma)!=4) {
+      stop("sigma is not a 2x2 matrix")
+    }
+  
+    kernel = function(x, mu, rooti) {
+        z = as.vector(t(rooti) %*% (x - mu))
+        (z %*% z)
+    }
+    if (missing(rho)) {
+        pandterm("Requires rho argument ")
+    }
+    cat("Bivariate Normal Gibbs Sampler", fill = TRUE)
+    cat("rho= ", rho, fill = TRUE)
+    cat("initial x,y coordinates= (", initx, ",", inity, ")", 
+        fill = TRUE)
+    cat("burn-in= ", burnin, " R= ", R, fill = TRUE)
+    cat(" ", fill = TRUE)
+    cat(" ", fill = TRUE)
+    sd = (1 - rho^2)^(0.5)
+    rooti = backsolve(chol(sigma), diag(2))
+
+    x = seq(-3.5, 3.5, length = 100)
+    y = x
+    z = matrix(double(100 * 100), ncol = 100)
+    for (i in 1:length(x)) {
+        for (j in 1:length(y)) {
+            z[i, j] = kernel(c(x[i], y[j]), mu, rooti)
+        }
+    }
+    prob = c(0.1, 0.3, 0.5, 0.7, 0.9, 0.99)
+    lev = qchisq(prob, 2)
+    par(mfrow = c(1, 1))
+    contour(x, y, z, levels = lev, labels = prob, xlab = "theta1", 
+        ylab = "theta2", drawlabels = TRUE, col = "green", labcex = 1.3, 
+        lwd = 2)
+    title(paste("Gibbs Sampler with Intermediate Moves: Rho =", 
+        rho))
+    points(initx, inity, pch = "B", cex = 1.5)
+    oldx = initx
+    oldy = inity
+    continue = "y"
+    r = 0
+    draws = matrix(double(R * 2), ncol = 2)
+    draws[1, ] = c(initx, inity)
+    cat(" ")
+    cat("Starting Gibbs Sampler ....", fill = TRUE)
+    cat("(hit enter or y to display moves one-at-a-time)", fill = TRUE)
+    cat("('go' to paint all moves without stopping to prompt)", 
+        fill = TRUE)
+    cat(" ", fill = TRUE)
+    
+    while (continue != "n" && r < R) {
+        if (continue != "go") 
+            continue = readline("cont?")
+      #######################################################################  
+      ## only modified lines--> replaced rnorm(1)
+        newy = sd * rtrun(mu=mu[1], sigma=sd, a=lower1, b=upper1) + rho * oldx
+        lines(c(oldx, oldx), c(oldy, newy), col = "magenta", 
+            lwd = 1.5)
+        newx = sd * rtrun(mu=mu[2], sigma=sd, a=lower2, b=upper2) + rho * newy
+        lines(c(oldx, newx), c(newy, newy), col = "magenta", 
+            lwd = 1.5)
+        oldy = newy
+        oldx = newx
+        r = r + 1
+        draws[r, ] = c(newx, newy)
+
+    }
+    continue = readline("Show Comparison to iid Sampler?")
+    if (continue != "n" & continue != "No" & continue != "no") {
+        par(mfrow = c(1, 2))
+        contour(x, y, z, levels = lev, xlab = "theta1", ylab = "theta2", 
+            drawlabels = TRUE, labels = prob, labcex = 1.1, col = "green", 
+            lwd = 2)
+        title(paste("Gibbs Draws: Rho =", rho))
+        points(draws[(burnin + 1):R, ], pch = 20, col = "magenta", 
+            cex = 0.7)
+        idraws = t(chol(sigma)) %*% matrix(rnorm(2 * (R - burnin)), 
+            nrow = 2)
+        idraws = t(idraws)
+        contour(x, y, z, levels = lev, xlab = "theta1", ylab = "theta2", 
+            drawlabels = TRUE, labels = prob, labcex = 1.1, col = "green", 
+            lwd = 2)
+        title(paste("IID draws: Rho =", rho))
+        points(idraws, pch = 20, col = "magenta", cex = 0.7)
+    }
+    attributes(draws)$class = c("bayesm.mat", "mcmc")
+    attributes(draws)$mcpar = c(1, R, 1)
+    return(draws)
+}
+```
+
+```{r task_1_res, include=TRUE,echo=FALSE , results='asis', message=FALSE}
+## define parameters
+# mean of normal
+mu <- c(0,0)
+# sigma depends on rho, so we define it later
+
+# truncation --> one negative, one positive
+lower1 <- -10
+upper1 <- 0
+lower2 <- 0
+upper2 <- 10
+
+# gibbs sampler
+#initx = -2 # start value for first variable
+#inity = 2 # start value for second variable
+burnin = 1000
+R = 11000
+
+rho <- c(0.5, 0.9, -0.9)
+#rho <- 0.5
+draw <- list()
+for (i in 1:length(rho)){
+  sigma <- matrix(c(1,rho[i], rho[i],1), ncol=2)
+  draw[[i]] <- bi_trun_norm_gibbs(rho=rho[i], burnin = burnin, R = R, mu=mu, sigma=sigma,
+                           lower1=lower1, upper1=upper1, lower2=lower2, upper2=upper2)
+}
+
+
+```
+
+
+
+## Task 2
+
+```{r task_2_code, include=TRUE,echo=TRUE , results=FALSE, message=FALSE}
+
+
+```
+
+```{r task_2_res, include=TRUE,echo=TRUE , results='asis', message=FALSE}
+
+```
+
+
+```{r task_2_plot, include=TRUE,echo=FALSE, Efig.show="hold", message=FALSE}
+
+```
+
+## Task 3
+```{r task_3_code, include=TRUE,echo=TRUE , results=FALSE, message=FALSE}
+
+```
+
+
+
+
+
+
