@@ -5,64 +5,161 @@ date: "2022-11-23"
 output: pdf_document
 ---
 
-```{r setup, r, echo=FALSE, message=FALSE, warning=FALSE, fig=TRUE, fig.width=6.472, fig.height=4}
-rm(list=ls())
+## Question 1
+
+```{r setup, r,fig=TRUE, INCLUDE = FALSE, echo=FALSE, message=FALSE, warning=FALSE, fig.width=6.472, fig.height=4}
+library(bayesm)
+library(data.table)
+library(knitr)
+library(flextable)
+library(tidyverse)
+library(tmvtnorm)
 library(LaplacesDemon)
+library(truncnorm)
+library(stats)
+##a modified version of rbiTrunNormGibbs
+rbiTrunNormGibbs <- function (initx = 2, inity = -2, rho, burnin = 100, R = 500) 
+{
+  kernel = function(x, mu, rooti) {
+    z = as.vector(t(rooti) %*% (x - mu))
+    (z %*% z)
+  }
+  if (missing(rho)) {
+    pandterm("Requires rho argument ")
+  }
+  #cat("Bivariate Truncated Normal Gibbs Sampler", fill = TRUE)
+  #cat("rho= ", rho, fill = TRUE)
+  #cat("initial x,y coordinates= (", initx, ",", inity, ")", 
+  #    fill = TRUE)
+  #cat("burn-in= ", burnin, " R= ", R, fill = TRUE)
+  #cat(" ", fill = TRUE)
+  #cat(" ", fill = TRUE)
+  sd = (1 - rho^2)^(0.5)
+  sigma = matrix(c(1, rho, rho, 1), ncol = 2)
+  rooti = backsolve(chol(sigma), diag(2))
+  mu = c(0, 0)
+  x = seq(-3.5, 3.5, length = 100)
+  y = x
+  z = matrix(double(100 * 100), ncol = 100)
+  for (i in 1:length(x)) {
+    for (j in 1:length(y)) {
+      z[i, j] = kernel(c(x[i], y[j]), mu, rooti)
+    }
+  }
+  prob = c(0.1, 0.3, 0.5, 0.7, 0.9, 0.99)
+  lev = qchisq(prob, 2)
+  par(mfrow = c(1, 1))
+  contour(x, y, z, levels = lev, labels = prob, xlab = "theta1", 
+          ylab = "theta2", drawlabels = TRUE, col = "green", labcex = 1.3, 
+          lwd = 2)
+  title(paste("TruncGibbs Sampler with Intermediate Moves: Rho =", 
+              rho))
+  points(initx, inity, pch = "B", cex = 1.5)
+  oldx = initx
+  oldy = inity
+  continue = "y"
+  r = 0
+  draws = matrix(double(R * 2), ncol = 2)
+  draws[1, ] = c(initx, inity)
+  #cat(" ")
+  #cat("Starting Truncated Gibbs Sampler ....", fill = TRUE)
+  #cat("(hit enter or y to display moves one-at-a-time)", fill = TRUE)
+  #cat("('go' to paint all moves without stopping to prompt)", 
+      #fill = TRUE)
+  #cat(" ", fill = TRUE)
+  while ( r < R) {
+    newy = sd * rtrun(0,1, a=-Inf, b=0) + rho * oldx
+    lines(c(oldx, oldx), c(oldy, newy), col = "magenta", 
+          lwd = 1.5)
+    newx = sd * rtrun(0,1, a=0, b=Inf) + rho * newy
+    lines(c(oldx, newx), c(newy, newy), col = "magenta", 
+          lwd = 1.5)
+    oldy = newy
+    oldx = newx
+    r = r + 1
+    draws[r, ] = c(newx, newy)
+  }
+  #continue = readline("Show Comparison to iid Sampler?")
+  if (continue != "n" & continue != "No" & continue != "no") {
+    par(mfrow = c(1, 2))
+    contour(x, y, z, levels = lev, xlab = "theta1", ylab = "theta2", 
+            drawlabels = TRUE, labels = prob, labcex = 1.1, col = "green", 
+            lwd = 2)
+    title(paste("Gibbs Draws: Rho =", rho))
+    points(draws[(burnin + 1):R, ], pch = 20, col = "magenta", 
+           cex = 0.7)
+    idraws = t(chol(sigma)) %*% matrix(rnorm(2 * (R - burnin)), 
+                                       nrow = 2)
+    idraws = t(idraws)
+    contour(x, y, z, levels = lev, xlab = "theta1", ylab = "theta2", 
+            drawlabels = TRUE, labels = prob, labcex = 1.1, col = "green", 
+            lwd = 2)
+    title(paste("IID draws: Rho =", rho))
+    points(idraws, pch = 20, col = "magenta", cex = 0.7)
+  }
+  attributes(draws)$class = c("bayesm.mat", "mcmc")
+  attributes(draws)$mcpar = c(1, R, 1)
+  return(draws)
+}
+sample_1<-rbiTrunNormGibbs(initx=0,inity=0,0.5,burnin=100, R=10000)
+sample_1 <- as.data.frame.array(sample_1)
+
+sample_2<-rbiTrunNormGibbs(initx=0,inity=0,0.9,burnin=100, R=10000)
+sample_2 <- as.data.frame.array(sample_2)
+
+sample_3<-rbiTrunNormGibbs(initx=0,inity=0,-0.9,burnin=100, R=10000)
+sample_3 <- as.data.frame.array(sample_3)
+
+
+```
+
+## Question 2
+
+```{r, fig=TRUE, INCLUDE = FALSE, echo=FALSE, message=FALSE, warning=FALSE, fig.width=6.472, fig.height=4}
 library(bayesm)
 library(data.table)
 library(knitr)
 library(flextable)
 library(tidyverse)
 library(tmvtnorm)
-library(car)
-library(rgl)
-# Reject-Accept Algorithm for (standard) truncated normal.
-# 1) draw X* from g(X) rnorm(mean=0,sd=1)
-# 2) accept X* if X*>=lower truncation and X*<=upper truncation, else reject
+library(LaplacesDemon)
+library(truncnorm)
+library(stats)
+library(rockchalk)
+simple_rejection <- function(n, mu=c(0,0), sigma=diag(2), lower1, upper1, lower2, upper2){
+  count <- 0
+  draw <- matrix(NA,n,2)
+  
+  for (i in 1:n){
+    in_limits <- FALSE
+    while (in_limits==FALSE){
+      draw[i,] <- mvrnorm(1, mu, sigma)
+      in_limits <- ifelse((draw[i,1] >= lower1 & draw[i,1] <= upper1) & (draw[i,2] >= lower2 & draw[i,2] <= upper2), TRUE, FALSE)
+      count <- count +1
+    }
+  }
 
-sigma <- matrix(c(1,0.5,0.5,1), ncol=2)
-x <- rtmvnorm(n=10000, mean=c(0,0), sigma=sigma, upper=c(Inf, 0), lower = c(0,-Inf), algorithm="gibbs", burn.in.samples=100)
-plot(x, main="samples from truncated bivariate normal distribution",
-  xlim=c(-6,6), ylim=c(-6,6), 
-  xlab=expression(x[1]), ylab=expression(x[2]))
-abline(v=1, lty=3, lwd=2, col="red")
-abline(h=0, lty=3, lwd=2, col="blue")
+  return(list(draw, count))
+}
+rejection_sample <- simple_rejection(10000, mu =c(0,0), sigma = diag(2), 0, Inf,-Inf, 0)
 
-x <-data.frame(x)
-first <- density(x$X1)
-plot(first)
-second <- density(x$X2)
-plot(second)
-joint.density.plot(x$X1, x$X2, Title=NULL, contour=TRUE, color=FALSE, Trace=NULL)
-
-
-```
-
-
-```{r truncated }
-
-library(bayesm)
-library(data.table)
-library(knitr)
-library(flextable)
-library(tidyverse)
-library(tmvtnorm)
-
-sample <-rbiTrunNormGibbs(initx=0,inity=0,rho=0.5,burnin=100, R=10000)
-sample <- as.data.frame.array(sample)
-first <- as.numeric(as.character(sample$V1))
-plot(density(first))
-
-second <- as.numeric(as.character(sample$V2))
-plot(density(second))
-joint.density.plot(first, second, Title=NULL, contour=TRUE, color=FALSE, Trace=NULL)
+rejection_sample <- as.data.frame.list(rejection_sample)
 
 
-# Reject-Accept Algorithm for (standard) truncated normal.
-# 1) draw X* from g(X) rnorm(mean=0,sd=1)
-# 2) accept X* if X*>=lower truncation and X*<=upper truncation, else reject
 
-
+plot(density(rejection_sample$X1),Title = "Density of the first variate")
+plot(density(rejection_sample$X2),Title="Density of the second variate")
+joint.density.plot(rejection_sample$X1, rejection_sample$X2, Title="Joint density of draws", contour=TRUE, color=FALSE, Trace=NULL)
 
 ```
 
+## Question 3
+
+```{r,  r,fig=TRUE, INCLUDE = FALSE, echo=FALSE, message=FALSE, warning=FALSE, fig.width=6.472, fig.height=4}
+acf(sample_1, xlab="Rho = 0.5")
+acf(sample_2, xlab ="Rho =0.9")
+acf(sample_3, xlab = "Rho = -0.9")
+acf(rejection_sample, xlab ="rejection sampling acfs")
+```
+
+The autocorrelation functions of the sample clearly depend on the correlation that we impose in Question 1.
