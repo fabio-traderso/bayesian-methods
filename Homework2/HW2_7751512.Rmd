@@ -7,7 +7,7 @@ output: pdf_document
 
 ## Question 1
 
-```{r setup, r,fig=TRUE, INCLUDE = FALSE, echo=FALSE, message=FALSE, warning=FALSE, fig.width=6.472, fig.height=4}
+```{r,fig=TRUE, INCLUDE = FALSE, echo=FALSE, message=FALSE, warning=FALSE, fig.width=6.472, fig.height=4}
 library(bayesm)
 library(data.table)
 library(knitr)
@@ -17,6 +17,7 @@ library(tmvtnorm)
 library(LaplacesDemon)
 library(truncnorm)
 library(stats)
+set.seed(1996)
 ##a modified version of rbiTrunNormGibbs
 rbiTrunNormGibbs <- function (initx = 2, inity = -2, rho, burnin = 100, R = 500) 
 {
@@ -112,6 +113,16 @@ sample_3 <- as.data.frame.array(sample_3)
 
 
 ```
+The function produces already graphs, but I added a chunk to show some other potential figure ideas (set fig = TRUE) to see them. 
+
+```{r, graphs,fig=FALSE, INCLUDE = FALSE, echo=FALSE, message=FALSE, warning=FALSE, fig.width=6.472, fig.height=4 }
+plot(density(sample_1$V1), main ="Density of the first variate for Draws for rho = 0.5")
+plot(density(sample_1$V2), main = "Density of the second variate for Draws for rho = 0.5")
+joint.density.plot(sample_1$V1, sample_1$V2, Title="Joint density of the covariates when rho = 0.5", contour=TRUE, color=FALSE, Trace=NULL)
+
+
+
+```
 
 ## Question 2
 
@@ -126,7 +137,8 @@ library(LaplacesDemon)
 library(truncnorm)
 library(stats)
 library(rockchalk)
-simple_rejection <- function(n, mu=c(0,0), sigma=diag(2), lower1, upper1, lower2, upper2){
+set.seed(1996)
+sample_rejection <- function(n, mu=c(0,0), sigma=diag(2), lower1, upper1, lower2, upper2){
   count <- 0
   draw <- matrix(NA,n,2)
   
@@ -139,27 +151,49 @@ simple_rejection <- function(n, mu=c(0,0), sigma=diag(2), lower1, upper1, lower2
     }
   }
 
-  return(list(draw, count))
+  return(list(draw))
 }
-rejection_sample <- simple_rejection(10000, mu =c(0,0), sigma = diag(2), 0, Inf,-Inf, 0)
 
-rejection_sample <- as.data.frame.list(rejection_sample)
+a <- matrix(c(1,0.5,0.5,1), byrow=TRUE, nrow=2, ncol=2)
+b <- matrix(c(1,0.9,0.9,1), byrow=TRUE, nrow=2, ncol=2)
+c <- matrix(c(1,-0.9,-0.9,1), byrow=TRUE, nrow=2, ncol=2)
+rejection_sample_1 <- sample_rejection(10000, mu =c(0,0), a, 0, Inf,-Inf, 0)
+rejection_sample_1 <- as.data.frame.list(rejection_sample_1)
+plot(density(rejection_sample_1$X1),main = "Density of the first variate, rho = 0.5")
+plot(density(rejection_sample_1$X2),main="Density of the second variate, rho = 0.5")
+
+rejection_sample_2 <- sample_rejection(10000, mu =c(0,0), b, 0, Inf,-Inf, 0)
+rejection_sample_2 <- as.data.frame.list(rejection_sample_2)
+plot(density(rejection_sample_2$X1),main = "Density of the first variate, rho = 0.9")
+plot(density(rejection_sample_2$X2),main="Density of the second variate, rho = 0.9")
+
+rejection_sample_3 <- sample_rejection(10000, mu =c(0,0), c, 0, Inf,-Inf, 0)
+rejection_sample_3 <- as.data.frame.list(rejection_sample_3)
+plot(density(rejection_sample_3$X1),main = "Density of the first variate, rho = -0.9")
+plot(density(rejection_sample_3$X2),main="Density of the second variate, rho = -0.9")
 
 
 
-plot(density(rejection_sample$X1),Title = "Density of the first variate")
-plot(density(rejection_sample$X2),Title="Density of the second variate")
-joint.density.plot(rejection_sample$X1, rejection_sample$X2, Title="Joint density of draws", contour=TRUE, color=FALSE, Trace=NULL)
+joint.density.plot(rejection_sample_1$X1, rejection_sample_1$X2, Title ="Joint density of draws, rho = 0.5", contour=TRUE, color=FALSE, Trace=NULL)
+joint.density.plot(rejection_sample_2$X1, rejection_sample_2$X2, Title ="Joint density of draws, rho = 0.9", contour=TRUE, color=FALSE, Trace=NULL)
+joint.density.plot(rejection_sample_3$X1, rejection_sample_3$X2, Title="Joint density of draws, rho = -0.9", contour=TRUE, color=FALSE, Trace=NULL)
+
 
 ```
 
 ## Question 3
 
-```{r,  r,fig=TRUE, INCLUDE = FALSE, echo=FALSE, message=FALSE, warning=FALSE, fig.width=6.472, fig.height=4}
+```{r,fig=TRUE, INCLUDE = FALSE, echo=FALSE, message=FALSE, warning=FALSE, fig.width=6.472, fig.height=4}
 acf(sample_1, xlab="Rho = 0.5")
 acf(sample_2, xlab ="Rho =0.9")
 acf(sample_3, xlab = "Rho = -0.9")
-acf(rejection_sample, xlab ="rejection sampling acfs")
 ```
 
 The autocorrelation functions of the sample clearly depend on the correlation that we impose in Question 1.
+The autocorrelation functions do depend on rho in the gibbs sampling case. 
+```{r,r,fig=TRUE, INCLUDE = FALSE, echo=FALSE, message=FALSE, warning=FALSE, fig.width=6.472, fig.height=4}
+acf(rejection_sample_1, xlab ="rejection sampling acfs, rho = 0.5")
+acf(rejection_sample_2, xlab ="rejection sampling acfs, rho = 0.9")
+acf(rejection_sample_3, xlab ="rejection sampling acfs, rho = -0.9")
+```
+On the other hand, the acfs for the rejection sampling technique are all zero. This shows that rejection sampling is superior when we take into account its higher computational costs (a higher number of iterations due to the nature of the technique).

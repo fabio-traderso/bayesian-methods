@@ -1,0 +1,357 @@
+---
+title: "Problem Set 1 - Monetary and Fiscal Policy: Theory and Practice"
+author: "Fabio Enrico Traverso - 7751512"
+date: "22-11-2022"
+output: pdf_document
+---
+## Taylor Rules
+
+
+To perform the task, I have used RStudio, which includes the packages $rdbnomics$ and $ecb$, allowing to
+download directly nicely formatted time series on macroeconomic data. I downloaded daily data on MRO
+rates and averaged them by year, in order to make these data conformable with the yearly format of the
+AMECO time series.
+
+```{r variables definition, r, echo=FALSE, message=FALSE, warning=FALSE, fig=TRUE, fig.width=6.472, fig.height=4}
+library(data.table)
+library(rdbnomics)
+library(ecb)
+library(lubridate)
+library(dplyr)
+library(tidyverse)
+#output gap
+gap <- rdb(ids = "AMECO/AVGDGP/EA19.1.0.0.0.AVGDGP")
+gap <- gap$original_value[41:63]
+gap <- as.numeric(gap)
+  
+#inflation
+price <- rdb(ids = "AMECO/ZCPIH/EA19.1.0.0.0.ZCPIH")
+price <- price$original_value[40:63]
+price <- as.numeric(price)
+price <- ((price[2:24]/na.omit(lag(price)) - 1)*100)
+
+#taylor rule
+inflation_gap <- price - 2
+taylor_rate <- (2+price+0.5*inflation_gap+0.5*gap)
+
+
+
+#MRO
+
+mro_daily <- get_data("FM.D.U2.EUR.4F.KR.MRR_RT.LEV")
+mro_daily$obstime <- as.Date(mro_daily$obstime)
+mro_daily <- mro_daily %>% 
+  rename('year'='obstime')
+mro_daily$year <- floor_date(mro_daily$year, "year")
+mro_year <- mro_daily %>%
+  group_by(year) %>%
+  summarize(mean = mean(obsvalue))
+mro <- mro_year$mean[2:length(mro_year$mean)]
+mro <- as.numeric(mro)
+```
+
+
+```{r plot first taylor rule, r, echo=FALSE, message=FALSE, warning=FALSE, fig=TRUE, fig.width=6.472, fig.height=4}
+library(data.table)
+library(rdbnomics)
+library(ecb)
+library(lubridate)
+library(dplyr)
+#1st plot
+year <- 2000:2022
+
+group <- rep('Taylor',23)
+d_taylor <- data.frame(year, taylor_rate, group)
+colnames(d_taylor) <- c('year', 'rate', 'group')
+group <- rep('MRO',23)
+d_mro <- data.frame(year, mro, group)
+colnames(d_mro) <- c('year', 'rate', 'group')
+df <- rbind(d_taylor, d_mro)
+
+library(ggplot2)
+ggplot(data=df, aes(x=year, y=rate, col=group))+geom_line()+theme_bw()+theme_gray()+
+  theme(plot.title = element_text(size = 10), plot.caption = element_text(size=10, hjust=1), axis.text=element_text(size=10))+labs(title="Taylor-Rule vs ECB MRO", x="Year", y = "")+geom_hline(yintercept = 0, linetype='dashed')+ theme(legend.position="bottom")
+```
+The spread seems to suggest that the Taylor Rule, outside of the financial crisis, has prescribed a tighter
+monetary policy than the one implemented by the ECB. Therefore, the ECB can be, on the basis of the
+Taylor Rule, be blamed of having been too loose in its monetary policy and, during the financial crisis, can
+be blamed of having reversed its stance too strongly. A clear shortcoming of the Taylor Rule is that it
+recommends a policy rate at time t based on the information on macroeconomic variables observed at time t.
+Such shortcoming would be overcome by a Taylor rule that recommends a policy rate at time $t$ based on
+observations at time $t-n$, in order to allow policy makers to actually implement the rule’s prescriptions.
+
+```{r plot spread, r, echo=FALSE, message=FALSE, warning=FALSE, fig=TRUE, fig.width=6.472, fig.height=4}
+#rate differential
+dif <- taylor_rate - mro
+df2 <- data.frame(year, dif)
+avg_dif <- mean(dif)
+
+library(ggplot2)
+ggplot(data=df2, aes(x=year, y=dif))+geom_line(col='red', size=1)+theme_bw()+theme_gray()+
+  theme(plot.title = element_text(size = 10), plot.caption = element_text(size=10, hjust=1), axis.text=element_text(size=10))+
+  labs(title="Spread: Taylor-MRO differential", x="Year", y = "")+geom_hline(yintercept = 2.11, linetype='dashed')
+```
+Assigning a larger coefficient $\alpha_2 = 1$ to the output gap yields a more volatile, or rather extreme, Taylor Rule. This is particularly true when the output gap is particularly large, e.g. during recessions.
+
+```{r plot second taylor rule, r, echo=FALSE, message=FALSE, warning=FALSE, fig=TRUE, fig.width=6.472, fig.height=4}
+library(data.table)
+library(rdbnomics)
+library(ecb)
+library(lubridate)
+library(dplyr)
+#2nd plot
+year <- 2000:2022
+taylor_rate2 <- (2+price+0.5*inflation_gap+gap)
+
+group <- rep('Alpha_2=0.5',23)
+d_taylor <- data.frame(year, taylor_rate, group)
+colnames(d_taylor) <- c('year', 'rate', 'group')
+group <- rep('Alpha_2=1',23)
+d_taylor2 <- data.frame(year, taylor_rate2, group)
+colnames(d_taylor2) <- c('year', 'rate', 'group')
+df <- rbind(d_taylor, d_taylor2)
+
+library(ggplot2)
+ggplot(data=df, aes(x=year, y=rate, col=group))+geom_line()+theme_bw()+theme_gray()+
+  theme(plot.title = element_text(size = 10), plot.caption = element_text(size=10, hjust=1), axis.text=element_text(size=10))+
+  labs(title="Taylor-Rule different weights for ouptut gap ", x="Year", y = "")+geom_hline(yintercept = 0, linetype='dashed')+ theme(legend.position="bottom")
+```
+
+
+```{r plot hicp, r, echo=FALSE, message=FALSE, warning=FALSE, fig=TRUE, fig.width=6.472, fig.height=4}
+library(data.table)
+library(rdbnomics)
+library(ecb)
+library(lubridate)
+library(dplyr)
+library(ggplot2)
+deflator <- rdb(ids = "AMECO/PVGD/EA19.3.1.0.0.PVGD") 
+deflator <- deflator$original_value[41:63]
+deflator <- as.numeric(deflator)
+deflator <- ((deflator[2:24]/na.omit(lag(deflator)) - 1)*100)
+
+par(mfrow=c(1,2))
+plot(deflator, type='l')
+
+
+group <- rep('HCPI',23)
+d_hcpi <- data.frame(year, price, group)
+colnames(d_hcpi) <- c('year', 'rate', 'group')
+group <- rep('GDP deflator',23)
+d_deflator <- data.frame(year, deflator, group)
+colnames(d_deflator) <- c('year', 'rate', 'group')
+df3 <- rbind(d_hcpi, d_deflator)
+
+library(ggplot2)
+plot1 <- ggplot(data=df3, aes(x=year, y=rate, col=group))+geom_line()+theme_bw()+theme_gray()+
+  theme(plot.title = element_text(size = 10), plot.caption = element_text(size=10, hjust=1), axis.text=element_text(size=10))+
+  labs(title="HCPI vs GDP Deflator", x="Year", y = "")+geom_hline(yintercept = 0, linetype='dashed')+ theme(legend.position="bottom")
+
+
+deflator_gap <- deflator-2
+taylor_deflator <- (2+price+0.5*deflator_gap+0.5*gap)
+group <- rep('HICP',23)
+d_hcpi <- data.frame(year, taylor_rate, group)
+colnames(d_hcpi) <- c('year', 'rate', 'group')
+group <- rep('GDP deflator',23)
+d_deflator <- data.frame(year,taylor_deflator , group)
+colnames(d_deflator) <- c('year', 'rate', 'group')
+df3 <- rbind(d_hcpi, d_deflator)
+
+
+library(ggplot2)
+plot2 <- ggplot(data=df3, aes(x=year, y=rate,col=group))+geom_line()+theme_bw()+theme_gray()+theme(plot.title = element_text(size = 10), plot.caption = element_text(size=10, hjust=1), axis.text=element_text(size=10))+labs(title="Taylor rule using HICP vs. GDP Deflator", x="Year", y = "")+geom_hline(yintercept = 0, linetype='dashed')+ theme(legend.position="bottom")
+
+library(gridExtra)
+grid.arrange(plot1, plot2, ncol=2)
+```
+
+Despite trying different measures of inflation, the prescriptions of the Taylor Rule do not seem to change significantly.
+
+```{r plot with trend gap, r, echo=FALSE, message=FALSE, warning=FALSE, fig=TRUE, fig.width=6.472, fig.height=4}
+library(data.table)
+library(rdbnomics)
+library(ecb)
+library(lubridate)
+library(dplyr)
+library(ggplot2)
+#taylor rule with trend gap
+gap_trend <- rdb(ids = "AMECO/AVGDGT/EA19.1.0.0.0.AVGDGT")
+gap_trend <- gap_trend$original_value[41:63]
+gap_trend <- as.numeric(gap_trend)
+
+taylor_trend <- (2+price+0.5*inflation_gap+0.5*gap_trend)
+
+group <- rep('Potential GDP',23)
+d_potential <- data.frame(year, gap, group)
+colnames(d_potential) <- c('year', 'rate', 'group')
+group <- rep('Trend GDP',23)
+d_trend <- data.frame(year, gap_trend, group)
+colnames(d_trend) <- c('year', 'rate', 'group')
+df4 <- rbind(d_potential, d_trend)
+
+library(ggplot2)
+plot1 <- ggplot(data=df4, aes(x=year, y=rate, col=group))+geom_line()+theme_bw()+theme_gray()+
+  theme(plot.title = element_text(size = 10), plot.caption = element_text(size=10, hjust=1), axis.text=element_text(size=10))+
+  labs(title="Output Gap: Potential vs Trend", x="Year", y = "")+geom_hline(yintercept = 0, linetype='dashed')+ theme(legend.position="bottom")
+
+
+group <- rep('Potential GDP',23)
+d_potential <- data.frame(year,taylor_rate, group)
+colnames(d_potential) <- c('year', 'rate', 'group')
+group <- rep('Trend GDP',23)
+d_trend <- data.frame(year, taylor_trend, group)
+colnames(d_trend) <- c('year', 'rate', 'group')
+df5 <- rbind(d_potential, d_trend)
+
+
+library(ggplot2)
+plot2 <- ggplot(data=df5, aes(x=year, y=rate, col=group))+geom_line()+theme_bw()+theme_gray()+
+  theme(plot.title = element_text(size=10), plot.caption = element_text(size=10, hjust=1), axis.text=element_text(size=10))+
+  labs(title="Taylor rule - Potential vs Trend", x="Year", y = "")+geom_hline(yintercept = 0, linetype='dashed')+ theme(legend.position="bottom")
+
+library(gridExtra)
+grid.arrange(plot1, plot2, ncol=2)
+
+```
+```{r unemployment taylor rule, r, echo=FALSE, message=FALSE, warning=FALSE, fig=TRUE, fig.width=6.472, fig.height=4}
+library(data.table)
+library(rdbnomics)
+library(ecb)
+library(lubridate)
+library(dplyr)
+unemployment <- rdb("AMECO/ZUTN/EA19.1.0.0.0.ZUTN")
+
+unemployment <- unemployment$original_value[41:63]
+unemployment <- as.numeric(unemployment)
+taylor_unemployment<- (2+price+0.5*inflation_gap+0.5*gap-0.5*(unemployment-9))
+test <- taylor_unemployment - taylor_rate
+group <- rep('Unemployment Rule',23)
+d_unemployment <- data.frame(year, taylor_unemployment, group)
+colnames(d_unemployment) <- c('year', 'rate', 'group')
+df6 <- rbind(d_unemployment)
+
+library(ggplot2)
+ggplot(data=df6, aes(x=year, y=rate, col=group))+geom_line()+theme_bw()+theme_gray()+  theme(plot.title = element_text(size = 10), plot.caption = element_text(size=10,hjust=1), axis.text=element_text(size=10))+  labs(title="Taylor rule adding Unemployment Gap", x="Year", y = "")+geom_hline(yintercept = 0, linetype='dashed')+ theme(legend.position="bottom")
+
+```
+I chose to set $U^n = 3\%$ and $\alpha_3 = 0.5$. Adding the unemployment gap does not change significantly the predictions of the Taylor Rule. 
+
+
+## Optimal monetary policy at the effective lower bound (LB) in a simple model of inflation
+
+Consider the simple linear process governing inflation: 
+\begin{equation}
+\pi_t = -a(i_t - i^*)+bq_t + pi_{t-1}+ \epsilon_t
+\end{equation}
+
+Assume that the central bank minimizes the following loss function: 
+\begin{equation}
+L(\pi_t)= E_t ( \pi_t - \pi^*)^2
+\end{equation}
+
+**1.** Find the optimal interest rate when the LB is not binding.
+
+$\underset{i_t, q_t}{\operatorname{min}}{E_t(\pi_t - \pi^*)^2}$ s.t. $\pi_t = -a(i_t-i^*)+bq_t+\pi_{t-1}+\epsilon_t$ &rarr; $\underset{i_t, q_t}{\operatorname{min}}{E_t(-a(i_t-i^*)+bq_t+\pi_{t-1}+\epsilon_t-\pi^*)^2}$ &rarr; $\underset{i_t, q_t}{\operatorname{min}}{\{E_t(\pi_t - \pi^*)^2+Var(\pi_t)\}} = \underset{i_t, q_t}{\operatorname{min}}{\{E_t(-a(i_t-i^*)+bq_t + \pi_{t-1}+\epsilon_t)^2+\sigma^{2}_{\epsilon}+ \sigma^{2}_{b}q^{2}_{t}\}}$ 
+
+We take the F.O.C.: 
+
+$\frac{\partial}{\partial i_t}: -2aE_t\{-a(i_t-i^*)+bq_t +\pi_{t-1}+\epsilon_t - \pi^*\} \overset{!}{=} 0$, since $E[e_t] = 0$ we have that $i_t = i^* + \frac{1}{a}(bq_t +\pi_{t-1}-\pi^*)$ and that $q_t = \frac{\bar{b}^2}{\bar{b}^2+\sigma^{2}_{b}}q_t$ &rarr; $q_t = 0$ &rarr; $i_t = i^* + \frac{1}{a}(\pi_{t-1}-\pi^*)$. 
+
+When the LB is not binding, the interest rate instrument is superior to quantitative easing because it is not uncertain. Hence, when the interest rate tool is available, it will be optimal to use only this and leave $q_t = 0$. Finally, the parameter $\frac{1}a$ represents the elasticity of inflation with respect to the interest rate. 
+To obtain the expected inflation, we plug the solution we obtained into the inflation process: 
+
+$\pi_t = -a(i_t - i^*)+bq_t + pi_{t-1}+ \epsilon_t$ &rarr; $\pi_t = \pi^* - \pi_{t-1}+ \pi_{t-1} + \epsilon_t$ &rarr; 
+$E_{t-1}\pi_t = E[\pi^*+\epsilon_t] = \pi^*$. 
+
+With unconstrained traditional monetary policy, the central bank is able to target inflation in expectation. 
+
+**2.** What about the case when $i_t = i_{LB}?$. 
+
+We take a new F.O.C. with respect to $q_t$ only, since the $i_t = i_{LB}$ constraint is binding and the F.O.C. does not hold.
+
+$\frac{\partial}{\partial q_t}: -2aE_t\{-a(i_t-i^*)+bq_t +\pi_{t-1}+\epsilon_t - \pi^*\}\bar{b} + 2\sigma^{2}_{b}q_t \overset{!}{=} 0$ &rarr; $(b^2 + \sigma^2_{b})*q_t = -\bar{b}(-a(i_t-i*)+\pi_{t-1}-\pi^*$ which recalling that $i_t = i_{LB}$: gives us the expression 
+$q^*_t =-\frac{\bar{b}}{\bar{b}^2+\sigma^2_{b}}(-a(i_{LB}-i^*)+\pi_{t-1}-\pi^*)$.
+
+Since the traditional monetary tool is not available, the central bank needs to resort to QE. How much QE is used is a function of how far is $i_{LB}$ from $i^*$.
+
+It follows that the behaviour of inflation expectations is: 
+$\pi_t = -a(i_t - i^*)+bq^*_t + pi_{t-1}+ \epsilon_t$ &rarr; $\pi_t = -a(i_{LB} - i^*) + \pi_{t-1} -\frac{\bar{b}}{\bar{b}^2+\sigma^2_{b}}(-a(i_{LB}-i^*)+\pi_{t-1}-\pi^*) + \epsilon_t$ &rarr;
+$$E_{t-1}\pi_t = -a(i_{LB} -i^*)(1-\frac{\bar{b}}{\bar{b}^2+\sigma^2_{b}}) +\pi_{t-1}(1-\frac{\bar{b}}{\bar{b}^2+\sigma^2_{b}}) +\frac{\bar{b}}{\bar{b}^2+\sigma^2_{b}}\pi^* = \frac{\bar{b}}{\bar{b}^2+\sigma^2_{b}}(\pi_{t-1} - a(i^{LB}-i^*)).$$
+
+By observing that the lower bound constraint is binding, we deduce that $i^{LB} > i^*$, thus implying that $\pi_{t-1}-a(i^{LB}-i^*) < 0$.
+
+This eventually implies $E_{t-1}\pi_t = \frac{\sigma^2_b}{\sigma^2_b + \bar{b}^2}(\pi_{t-1}-a(i_{LB}- i^*)) + \frac{\bar{b}^2}{\bar{b}^2 + \sigma^2_b}\pi^* < \pi^*$, i.e. that the inflation rate today is below target. 
+
+**3.**Adding the output gap to the model
+
+We can rewrite the model as: 
+
+$\pi_t = -a(i_t-i^*)+bq_t + c(Y_t-Y^*) + \pi_{t-1}+ \epsilon_t$, with $b\overset{N}{\sim} (0, \sigma^2_b), \epsilon_t\overset{N}{\sim}(0,\sigma^2_{\epsilon}$ and $Y_t \overset{N}{\sim} N(Y^*,\sigma^2_{Y})$. 
+
+My intitution suggests that $i_t$ and $Y_t - Y^*$ should be positively correlated: a positive (negative) output shock should increase (decrease) demand, which in turn increases (decreases) inflation expectations and therefore induces a tighter (softer) monetary stance, as experienced in the post-pandemic context when central banks were in 2021 considering raising interest rates. 
+
+On the other hand, the relationship between $q_t$ and $Y_t - Y^*$ should be negative, because a positive (negative) output gap will raise the inflationary pressure and require a lower amount of $q_t$ to reach the target $\pi^*$.
+
+## Optimal Monetary Policy in the Svensson (1997) Model 
+
+**1.** Assume that $\pi^e_{t-1} = \pi_t$. 
+The F.O.C. is obtained as follows: 
+
+$\underset{y_t}{\min} \{E_t[(\pi_{t+1}-\pi^*)^2+\lambda y^2_t\}$ s.t. $\pi_{t+1} = \beta(\gamma\pi^e_{t+1}+(1-\gamma)\pi_t)+\alpha y_t +\epsilon_{t+1}$. 
+
+Recalling the decomposition of the variance of a variable and using the fact that $y_t$ is not random at $t$, we obtain that 
+
+$\underset{y_t}{\min} \{E_t[(\pi_{t+1}-\pi^*)^2+\lambda y^2_t\} = \underset{y_t}{\min} \{(E_t[(\pi_{t+1}-\pi^*))^2 + Var(\pi_{t+1})+\lambda y^2_t\} = \underset{y_t}{\min} \{(E^2_t[(\beta\pi_t+\alpha y_t -\pi^*) + Var(\pi_{t-1}) +\lambda y^2_t \}$
+
+$\frac{\partial}{\partial y_t}: 2\alpha E_t[\beta*\pi_t + \alpha y_t - \pi^*] + 2\lambda y_t \overset{!}{=} 0$ &rarr; $y_t = \alpha\frac{\pi^*-\beta\pi_t}{\lambda +\alpha^2}$. 
+
+We now look for a law of $y_t$ as a function of current inflation and model parameters. 
+Given $y_t = \alpha\frac{\pi^*-\beta\pi_t}{\lambda +\alpha^2}$, we can plug it into the inflation formula and take expectations to yield 
+$E_{t}\pi_{t+1} = \frac{\beta\lambda\pi_t + \alpha^2\pi^*}{\lambda + \alpha^2}$. Note that $\lambda = 0$ implies that the central bank manages to hit the target in expectations. 
+
+**2.** Assume that $\beta = 1$ and $\pi^e_{t-1} = E_{t}\pi_{t-1}$. 
+We derive again the F.O.C.: 
+
+$\underset{y_t}{min} \{E[(\pi_{t+1}-\pi^*)^2+\lambda y^2_t]\}$ s.t. $\pi_{t+1} = \beta(\gamma E_t\pi_{t+1}+(1-\gamma)\pi_t)+\alpha y_t +\epsilon_{t+1}$&rarr;$\underset{y_t}{min}\{(\beta(\gamma E_t \pi_{t+1}+(1-\gamma)\pi_t)+\alpha y_t - \pi^*)^2 + \lambda y^2_t\}$. 
+
+$2\alpha[\beta(\gamma E_{t}\pi_{t+1} + (1-\gamma)\pi_t)+\alpha y_t -\pi^*]+2\lambda y_t = 0$ &rarr; $y_t = \alpha\frac{\pi^* -(\gamma E_t\pi_{t+1}+(1-\gamma)\pi_t)}{\lambda + \alpha^2}$. 
+
+Note that in this case $E_{t}\pi_{t+1}$ is multiplied by $\gamma$. 
+
+We now derive $E_{t}\pi_{t+1}$ in terms of $\pi_t$ and $y_t$. 
+We plug the solution for $y_t$ into the Phillips Curve: 
+
+$\pi_{t+1} = \gamma E_t\pi_{t+1} +(1-\gamma)\pi_t + \alpha y_t + \epsilon_{t+1}$ &rarr; $E_t\pi_{t+1} = \frac{(1-\gamma)\lambda}{\alpha^2 + \lambda(1-\gamma)}\pi_t + \frac{\alpha^2}{\alpha^2 +\lambda(1-\gamma)}$.
+
+When plugging this into the $y_t$ focs, we obtain that 
+$y_t = \alpha(1-\gamma)\frac{\pi^*-\pi_t}{\alpha^2 +\lambda(1-\gamma)}$. 
+
+We then turn to derive the reduced form PC:
+
+$\pi_{t+1} = (\gamma E_t \pi_{t+1} + (1-\gamma)\pi_t) +\alpha y_t + \epsilon_{t+1}$ &rarr; $E_t\pi_{t+1} = \frac{(1-\gamma)\lambda}{\alpha^2 +\lambda(1-\gamma)}\pi_t + \frac{\alpha^2}{\alpha^2 + \lambda(1-\gamma)}\pi^*$ and since $\pi^* = 0$, $\pi_{t+1} = (1-\gamma)\frac{\lambda + \alpha^2}{\lambda(1-\gamma)+\alpha^2}$. 
+
+Let's suppose now that $\lambda = 0$. What would be the behaviour of the PC? 
+
+The PC becomes $\pi_{t+1} = (1-\gamma)\pi_t +\alpha y_t + \epsilon_{t+1}$. 
+Note that now $c_1 (\lambda = 0) < c_1 (\lambda >0)$, which implies that $\lambda$ is a sensitivity parameter for future inflation with respect to the current level of inflation. 
+
+
+## MMB Model Comparison Exercise 
+
+![Model Comparison on key variables](C:\Users\fabio\Dropbox\GSEFM\Monetary and Fiscal Policy\Problem set 1\output1)
+![Model Comparison on key variables](C:\Users\fabio\Dropbox\GSEFM\Monetary and Fiscal Policy\Problem set 1\output2)
+
+Using a SW07 rule, we simulated the IRFs for a Monetary Policy Shock. The 2nd Generation models I chose are Rotemberg & Woodford (1997) and Altig et al. (2005), as suggested by the class material. The 3rd Generation models I chose are Christiano et al. (2014) and De Graeve (2008). 
+In light of the  findings, we can say that 3rd generation models are superior, especially when compared to RW97. This fact can be explained in terms of Model Uncertainty, i.e. 3rd Generation models present richer dynamics and present more persistent shocks as can be observed from inspection of the autocorrelation functions.  
+![Model Comparison on key variables](C:\Users\fabio\Dropbox\GSEFM\Monetary and Fiscal Policy\Problem set 1\output3)
+![Model Comparison on key variables](C:\Users\fabio\Dropbox\GSEFM\Monetary and Fiscal Policy\Problem set 1\output4)
+
+Different implementation of financial frictions does yield different IRFs, especially in the presence of a Fiscal Shock, thus suggesting different monetary policy stances. This difference is particularly strong regarding the interest rate and inflation. 
+
+
+
+
+
+
+
