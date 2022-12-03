@@ -7,6 +7,7 @@ output: pdf_document
 
 ```{r setup, include=FALSE, message=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+knitr::opts_chunk$set(fig.height = 4, fig.width = 6)
 ```
 
 Load packages:
@@ -16,6 +17,8 @@ library(data.table)
 library(knitr)
 library(flextable)
 library(tidyverse)
+library(plotly)
+library(MASS)
 set.seed(60323)
 
 library(compiler)
@@ -84,7 +87,7 @@ hist(my, breaks = 100)
 # Looks good!
 ```
 
-
+For this task I use the function `rbiNormGibbs` from the `bayesm` package. Instead of drawing from a normal distribution, I draw from a truncated normal distribution. Further, I "commented out" the print statements of the original function in order to let it run in Rmarkdown.
 ```{r task_1_code, include=TRUE,echo=TRUE , results=FALSE, message=FALSE}
 ## code based on rbiNormGibbs
 bi_trun_norm_gibbs <- function(initx = 2, inity = -2, rho, burnin = 100, R = 500, mu=NULL, sigma=NULL,lower1, upper1, lower2, upper2) {
@@ -109,13 +112,13 @@ bi_trun_norm_gibbs <- function(initx = 2, inity = -2, rho, burnin = 100, R = 500
     if (missing(rho)) {
         pandterm("Requires rho argument ")
     }
-    cat("Bivariate Normal Gibbs Sampler", fill = TRUE)
-    cat("rho= ", rho, fill = TRUE)
-    cat("initial x,y coordinates= (", initx, ",", inity, ")", 
-        fill = TRUE)
-    cat("burn-in= ", burnin, " R= ", R, fill = TRUE)
-    cat(" ", fill = TRUE)
-    cat(" ", fill = TRUE)
+    #cat("Bivariate Normal Gibbs Sampler", fill = TRUE)
+    #cat("rho= ", rho, fill = TRUE)
+    #cat("initial x,y coordinates= (", initx, ",", inity, ")", 
+     #   fill = TRUE)
+    #cat("burn-in= ", burnin, " R= ", R, fill = TRUE)
+    #cat(" ", fill = TRUE)
+    #cat(" ", fill = TRUE)
     sd = (1 - rho^2)^(0.5)
     rooti = backsolve(chol(sigma), diag(2))
 
@@ -142,16 +145,16 @@ bi_trun_norm_gibbs <- function(initx = 2, inity = -2, rho, burnin = 100, R = 500
     r = 0
     draws = matrix(double(R * 2), ncol = 2)
     draws[1, ] = c(initx, inity)
-    cat(" ")
-    cat("Starting Gibbs Sampler ....", fill = TRUE)
-    cat("(hit enter or y to display moves one-at-a-time)", fill = TRUE)
-    cat("('go' to paint all moves without stopping to prompt)", 
-        fill = TRUE)
-    cat(" ", fill = TRUE)
+    #cat(" ")
+    #cat("Starting Gibbs Sampler ....", fill = TRUE)
+    #cat("(hit enter or y to display moves one-at-a-time)", fill = TRUE)
+    #cat("('go' to paint all moves without stopping to prompt)", 
+     #   fill = TRUE)
+    #cat(" ", fill = TRUE)
     
-    while (continue != "n" && r < R) {
-        if (continue != "go") 
-            continue = readline("cont?")
+    while (r<R){ #(continue != "n" && r < R) {
+       #if (continue != "go") 
+        #  continue = readline("cont?")
       #######################################################################  
       ## only modified lines--> replaced rnorm(1)
         newy = sd * rtrun(mu=mu[1], sigma=sd, a=lower1, b=upper1) + rho * oldx
@@ -166,8 +169,8 @@ bi_trun_norm_gibbs <- function(initx = 2, inity = -2, rho, burnin = 100, R = 500
         draws[r, ] = c(newx, newy)
 
     }
-    continue = readline("Show Comparison to iid Sampler?")
-    if (continue != "n" & continue != "No" & continue != "no") {
+    #continue = readline("Show Comparison to iid Sampler?")
+    #if (continue != "n" & continue != "No" & continue != "no") {
         par(mfrow = c(1, 2))
         contour(x, y, z, levels = lev, xlab = "theta1", ylab = "theta2", 
             drawlabels = TRUE, labels = prob, labcex = 1.1, col = "green", 
@@ -183,13 +186,14 @@ bi_trun_norm_gibbs <- function(initx = 2, inity = -2, rho, burnin = 100, R = 500
             lwd = 2)
         title(paste("IID draws: Rho =", rho))
         points(idraws, pch = 20, col = "magenta", cex = 0.7)
-    }
+    #}
     attributes(draws)$class = c("bayesm.mat", "mcmc")
     attributes(draws)$mcpar = c(1, R, 1)
     return(draws)
 }
 ```
 
+The code that produces the plots below is from the `rbiNormGibbs` function from the `bayesm` package. Every second plot shows draws from an IID sampler, without the truncation. It becomes clear, that a higher degree of correlation among the variables leads to a greater concentration of the probability mass. Also, the truncated draws lose the ergodicity property as opposed  to the IID sampler.
 ```{r task_1_res, include=TRUE,echo=FALSE , results='asis', message=FALSE}
 ## define parameters
 # mean of normal
@@ -197,10 +201,10 @@ mu <- c(0,0)
 # sigma depends on rho, so we define it later
 
 # truncation --> one negative, one positive
-lower1 <- -10
+lower1 <- -Inf
 upper1 <- 0
 lower2 <- 0
-upper2 <- 10
+upper2 <- Inf
 
 # gibbs sampler
 #initx = -2 # start value for first variable
@@ -208,7 +212,7 @@ upper2 <- 10
 burnin = 1000
 R = 11000
 
-rho <- c(0.5, 0.9, -0.9)
+rho <- c(-0.9, 0.5, 0.9)
 #rho <- 0.5
 draw <- list()
 for (i in 1:length(rho)){
@@ -225,22 +229,108 @@ for (i in 1:length(rho)){
 ## Task 2
 
 ```{r task_2_code, include=TRUE,echo=TRUE , results=FALSE, message=FALSE}
+# based on MASS
+# draw from mvnorm until draw is in limits, repeat n times
+simple_rejection <- function(n, mu=c(0,0), sigma=diag(2), lower1, upper1, lower2, upper2){
+  count <- 0
+  draw <- matrix(NA,n,2)
+  
+  for (i in 1:n){
+    in_limits <- FALSE
+    while (in_limits==FALSE){
+      draw[i,] <- mvrnorm(1, mu, sigma)
+      in_limits <- ifelse((draw[i,1] >= lower1 & draw[i,1] <= upper1) & (draw[i,2] >= lower2 & draw[i,2] <= upper2), TRUE, FALSE)
+      count <- count +1
+    }
+  }
 
+  return(list(draw=draw, count=count))
+}
 
+simple_rejection(5, lower1 = -Inf, upper1 = 0, lower2 = 0, upper2 = Inf) #works
 ```
 
-```{r task_2_res, include=TRUE,echo=TRUE , results='asis', message=FALSE}
+```{r task_2_res, include=TRUE,echo=TRUE , results='asis', message=FALSE, Efig.show="hold"}
+## define parameters
+# mean of normal
+mu <- c(0,0)
+rho <- c(-0.9, 0.5, 0.9)
 
+# truncation --> one negative, one positive
+lower1 <- -Inf
+upper1 <- 0
+lower2 <- 0
+upper2 <- Inf
+n <- 10000
+
+## run rejection sampling
+
+res_draw <- list()
+res_count <- list(NA, NA, NA)
+
+## allocate memeory
+for (i in 1:length(rho)){
+  res_draw[[i]] <- matrix(NA, n, 2)
+}
+# draw
+for (i in 1:length(rho)){
+  sigma <- matrix(c(1, rho[i], rho[i], 1), ncol = 2)
+  tmp <- simple_rejection(n, mu = mu, sigma =  sigma, lower1 = lower1, upper1 = upper1, lower2 = lower2, upper2 = upper2)
+  res_draw[[i]][,1] <- tmp$draw[,1]
+  res_draw[[i]][,2] <- tmp$draw[,2]
+  res_count[[i]] <- tmp$count
+  
+  # messi plot, but works
+  plot(res_draw[[i]][,1], res_draw[[i]][,2],xlim = c(min(res_draw[[i]][,1]), 2), ylim=c(-2,max(res_draw[[i]][,2])),
+       xlab = "Var 1 < 0", ylab = "Var 2 > 0", main = paste("Rho =", as.character(rho[i])))
+}
+print(rho)
+print(res_count)
 ```
 
+Even though the plots are not the same, we can see a small difference between the two methods. The Gibbs sampler draws not exactly from the truncated distribution but also "off the limits". That leads to a more "scattered" image for the Gibbs sampler, whereas the rejection methods keeps the proposed limits.
 
-```{r task_2_plot, include=TRUE,echo=FALSE, Efig.show="hold", message=FALSE}
-
-```
+The number of "rejected" draws increases with the value (not the absolute value!) of rho, suggesting a relation among those two statistics.
 
 ## Task 3
-```{r task_3_code, include=TRUE,echo=TRUE , results=FALSE, message=FALSE}
+```{r task_3_res, include=TRUE,echo=TRUE , results='asis', message=FALSE, Efig.show="hold",  fig.height = 5, fig.width = 5}
 
+for (i in 1:length(rho)){
+  print(paste("Gibbs sampler for rho=", as.character(rho[i])))
+  acf(draw[[i]])
+  print(paste("Rejection sampler for rho=", as.character(rho[i])))
+  acf(res_draw[[i]])
+}
+
+```
+As expected we see more autocorrelation in the plots with higher absolute values of rho for the Gibbs sampler. Somehow, the rejection sampler (every second plot) does not reveal any autocorrelation. Maybe, due to the "rejection" of many draws, the variables loose their dependence over time, i.e. the rho is "thrown away".
+
+The result surprises me, since the scatter plots do not reveal much difference. However, the different plotting styles might hide some important information regarding the distributions. 
+
+```{r task_1_3d_code, include=FALSE,echo=FALSE , results=FALSE, message=FALSE}
+# lapply(draw, min)
+# lapply(draw, max)
+# 
+# ## prepare 3 d density plot
+# # count observations that fall in each "field" of the 2d grid
+# x <- seq(-3,3,0.1) # based on min max
+# y <- x
+# 
+# grid <- expand.grid(x,y) # contians all possible compibnations of x and y
+# draw <- lapply(draw, as.matrix)
+# 
+# # probably very ineffiecint
+# grid_count <- function(grid_2d, matrix_2_vars){
+#   count <- rep(NA, nrow(grid_2d))
+#   
+#   for (i in 1:(nrow(grid_2d)-1)){
+#     condition <- (matrix_2_vars[,1] >= grid[i,1] & matrix_2_vars[,1] <= grid[i+1,1]) & (matrix_2_vars[,2] >= grid[i,2] & matrix_2_vars[,2] <= (grid[i,2]+0.1))
+#     count[i] <- ifelse(is.numeric(nrow(matrix_2_vars[condition,])),nrow(matrix_2_vars[condition,]),0)
+#   }
+#   return(count)
+# }
+# 
+# count <- grid_count(grid, draw[[1]])
 ```
 
 
